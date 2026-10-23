@@ -35,6 +35,7 @@ import * as thinking from './src/host/thinking.js'
 import * as channel from './src/host/channel.js'
 import * as feed from './src/host/feed.js'
 import * as directory from './src/host/directory.js'
+import * as bridge from './src/host/bridge.js'
 
 export { COLORS } from './src/host/constants.js'
 
@@ -48,7 +49,9 @@ export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'ses
 const MODULES = [diagnostics, store, models, providers, permissions, turns, handoffs, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, thinking, feed, channel]
 
 export function apply(ctx, config = {}) {
-  directory.install(createRuntime(ctx, config))
+  const rt = createRuntime(ctx, config)
+  directory.install(rt)
+  bridge.install(rt)
 }
 
 export function createRuntime(ctx, config = {}) {
