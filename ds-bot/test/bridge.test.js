@@ -70,6 +70,7 @@ test('stream selection cannot leak another Bot or raw message/tool fields; unsub
   const events = []
   const off = await bridge.subscribe(target, (event, data) => events.push({ event, data }))
   emit('stream', { botId: 'other', text: 'SECRET' })
+  emit('stream', { botId: 'b', sessionId: 'group-session', text: 'SECRET' })
   emit('message', { botId: 'b', item: { text: 'PRIVATE' } })
   emit('stream', { botId: 'b', attemptId: 'a', sessionId: 'part-2', text: 'Hello', private: 'SECRET' })
   assert.equal(events.length, 2)
@@ -77,4 +78,34 @@ test('stream selection cannot leak another Bot or raw message/tool fields; unsub
   assert.equal(JSON.stringify(events).includes('PRIVATE'), false)
   off(); emit('revision', {})
   assert.equal(events.length, 2)
+}))
+
+test('native model controls whitelist the catalog and apply a model only on explicit request', () => fixture(async ({ bridge, rt, target }) => {
+  let changed = 0
+  rt.catalog = async () => [{ ref: 'mock/one', name: 'One', providerName: 'Mock', secret: 'SECRET' }, { ref: 'mock/locked', name: 'Locked', providerName: 'Mock', needsKey: true }]
+  rt.workView = () => ({ b: {} })
+  rt.updateBot = async (id, patch) => { assert.equal(id, 'b'); assert.deepEqual(patch, { model: 'mock/one' }); changed++ }
+  const settings = await bridge.settings(target)
+  assert.equal(changed, 0)
+  assert.equal(settings.working, true)
+  assert.equal(JSON.stringify(settings).includes('SECRET'), false)
+  assert.equal(settings.models[1].available, false)
+  const input = { ...target, requestId: 'control-id-000001', action: 'model', model: 'mock/one' }
+  await Promise.all([bridge.control(input), bridge.control(input)])
+  assert.equal(changed, 1)
+  await assert.rejects(bridge.control({ ...input, model: 'mock/locked' }), { code: 'bot/request-conflict' })
+  await assert.rejects(bridge.control({ ...input, requestId: 'control-id-000002', model: 'mock/locked' }), { code: 'bot/model-unavailable' })
+  rt.readOnly = () => 'read only'
+  await assert.rejects(bridge.control(input), { code: 'bot/read-only' })
+}))
+
+test('stop targets the displayed own session and cannot follow a rotated chat or run twice', () => fixture(async ({ bridge, rt, target }) => {
+  let stops = 0
+  rt.resolveAgent = async id => { assert.equal(id, 'part-2'); return { cancel: () => { stops++ } } }
+  const input = { ...target, requestId: 'control-id-000003', action: 'stop', sessionId: 'part-2' }
+  await Promise.all([bridge.control(input), bridge.control(input)])
+  assert.equal(stops, 1)
+  rt.chatOf = () => 'part-3'
+  await assert.rejects(bridge.control({ ...input, requestId: 'control-id-000004' }), { code: 'bot/target-changed' })
+  assert.equal(stops, 1)
 }))
