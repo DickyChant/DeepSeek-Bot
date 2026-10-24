@@ -22,6 +22,7 @@ async function fixture(run) {
     ] }),
     subscribeFeed: fn => { listener = fn; return () => { listener = undefined } },
   }
+  rt.ctx.get = name => rt.ctx[name]
   rt.ctx.sessionController = { prompt: async input => { calls.push(input); return {} } }
   const bridge = new BotBridge(rt)
   const target = { botId: 'b', runtimeId: await directoryIdentity(home) }
@@ -108,4 +109,53 @@ test('stop targets the displayed own session and cannot follow a rotated chat or
   rt.chatOf = () => 'part-3'
   await assert.rejects(bridge.control({ ...input, requestId: 'control-id-000004' }), { code: 'bot/target-changed' })
   assert.equal(stops, 1)
+}))
+
+test('group send uses the room session and rejects a Bot outside the group', () => fixture(async ({ bridge, rt, calls, target }) => {
+  rt.roomOf = id => id === 'room' ? { id, members: ['b'], log: [{ seq: 1, who: 'Writer', botId: 'b', text: 'Group reply' }] } : undefined
+  const group = { ...target, roomId: 'room' }
+  const page = await bridge.chat(group)
+  assert.equal(page.sessionId, 'room')
+  assert.equal(page.items[0].name, 'Writer')
+  await bridge.send({ ...group, text: '@Writer hello', requestId: 'group-request-0001' })
+  assert.equal(calls[0].sessionId, 'room')
+  await assert.rejects(bridge.chat({ ...group, roomId: 'foreign' }), { code: 'bot/target-changed' })
+  await assert.rejects(bridge.send({ ...target, text: '@Writer hello', requestId: 'group-request-0001' }), { code: 'bot/request-conflict' })
+}))
+
+test('uploads bind to the displayed session; receipts cannot follow a rotation', () => fixture(async ({ bridge, rt, calls, target }) => {
+  let uploaded = 0
+  rt.resolveAgent = async id => ({ id })
+  rt.ctx.fileUploads = { upload: async (agent, input) => { uploaded++; assert.equal(agent.id, 'part-2'); return { receiptId: 'receipt', file: { name: input.name, bytes: 5 } } } }
+  const input = { ...target, sessionId: 'part-2', name: '测试.txt', data: Buffer.from('hello').toString('base64') }
+  assert.equal((await bridge.upload(input)).receiptId, 'receipt')
+  await assert.rejects(bridge.upload({ ...input, sessionId: 'part-1' }), { code: 'bot/target-changed' })
+  await assert.rejects(bridge.upload({ ...input, data: 'not base64' }), { code: 'bot/invalid' })
+  assert.equal(uploaded, 1)
+  await bridge.send({ ...target, sessionId: 'part-2', receipts: ['receipt'], text: '', requestId: 'files-request-0001' })
+  assert.deepEqual(calls[0].content, [{ type: 'file', receiptId: 'receipt' }])
+  rt.chatOf = () => 'rotated'
+  await assert.rejects(bridge.send({ ...target, sessionId: 'part-2', receipts: ['receipt'], text: '', requestId: 'files-request-0002' }), { code: 'bot/target-changed' })
+}))
+
+test('download capabilities are scoped to their Bot and conversation and expire', () => fixture(async ({ bridge, rt, target }) => {
+  const [file] = bridge.filesView(target, [{ attachmentId: 'hash', name: 'hello.txt', bytes: 5 }])
+  rt.ctx.attachments = { async* readFileStream() { yield Buffer.from('hello') } }
+  assert.equal((await bridge.download({ ...target, fileId: file.id })).data, Buffer.from('hello').toString('base64'))
+  rt.roomOf = id => ({ id, members: ['b'] })
+  await assert.rejects(bridge.download({ ...target, roomId: 'room', fileId: file.id }), { code: 'bot/target-changed' })
+  bridge.files.get(file.id).until = 0
+  await assert.rejects(bridge.download({ ...target, fileId: file.id }), { code: 'bot/target-changed' })
+}))
+
+test('group approval answers require the exact pending session and an explicit single decision', () => fixture(async ({ bridge, rt, target }) => {
+  rt.roomOf = id => ({ id, members: ['b'] })
+  let pending = true
+  rt.approvalsView = () => pending ? [{ id: 'approval', botId: 'b', roomId: 'room', sessionId: 'hidden', tool: 'bash', reason: 'permission', answerable: true }] : []
+  rt.answerApproval = (id, choice) => { assert.equal(id, 'approval'); assert.equal(choice, 'reject'); pending = false }
+  const input = { ...target, roomId: 'room', approvalId: 'approval', sessionId: 'hidden', choice: 'reject', requestId: 'approval-request-01' }
+  await assert.rejects(bridge.answer({ ...input, sessionId: 'foreign' }), { code: 'bot/stale' })
+  await assert.rejects(bridge.answer({ ...input, choice: 'always' }), { code: 'bot/invalid' })
+  assert.equal((await bridge.answer(input)).accepted, true)
+  await assert.rejects(bridge.answer(input), { code: 'bot/stale' })
 }))

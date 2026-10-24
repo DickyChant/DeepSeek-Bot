@@ -115,6 +115,7 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'effect ds-bot: api route',
     'route POST /api/bot',
     'effect ds-bot: load state',
+    'effect ds-bot: bridge approvals',
   ])
 })
 

@@ -407,6 +407,10 @@ function decide(body) {
   if (secretAsk && tools.has('request_secret')) {
     return [text('这件事要用一个密钥，我先看看有没有。'), tool('request_secret', { name: secretAsk[1] ?? 'DEMO_TOKEN', purpose: '测试' })]
   }
+  if (userText.startsWith('Ovis approval fixture')) {
+    const shell = ['pwsh', 'bash'].find(name => tools.has(name))
+    if (shell) return [tool(shell, { command: 'echo ovis-approval-fixture', description: 'Mock approval test', justification: ESCALATION, sandbox_permissions: 'danger-full-access' })]
+  }
   // Group management in a Bot's own chat, in a fixed command form the tests use.
   let order
   if ((order = /^建群\s*(\S+?)\s*[:：]\s*(.+)$/.exec(userText))) {
