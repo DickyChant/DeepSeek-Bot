@@ -83,3 +83,11 @@ test('a handoff id cannot be reused on another task after closure', () => fixtur
   await bridge.call({ ...request, action: 'close' })
   await assert.rejects(bridge.call({ ...request, taskId: 'repo/2' }), { code: 'bot/request-conflict' })
 }))
+test('cancelled and mismatched turns cannot manufacture a Chief report', () => fixture(async ({ bridge, event }) => {
+  await bridge.call(request)
+  event('turn/start', { turn: 7 }); event('user/message', { source: { rpcId: request.id } })
+  event('assistant/message', { turn: 3, message: { content: [{ type: 'text', text: 'wrong turn' }] } })
+  event('turn/end', { turn: 7, reason: { kind: 'cancelled' } })
+  const result = await bridge.call({ ...request, action: 'status' })
+  assert.equal(result.state, 'uncertain'); assert.equal(result.report, null)
+}))

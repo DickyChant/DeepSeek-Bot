@@ -19,7 +19,7 @@ let request
 if (mode === 'send') {
   const state = JSON.parse(readFileSync(join(home, 'bot/state.json'), 'utf8'))
   const chief = Object.values(state.bots).find(bot => bot.name === 'Chief')
-  request = { id: randomUUID(), boardId: 'mock-board', taskId: 'fixture/1', runtimeId: readFileSync(join(home, 'bot/directory-id'), 'utf8').trim(), botId: chief.id, scope: 'Give a short design review report.', origin: 'boss', end: 'report_once', hop: 1 }
+  request = { id: randomUUID(), boardId: 'mock-board', taskId: `fixture/${Date.now()}`, runtimeId: readFileSync(join(home, 'bot/directory-id'), 'utf8').trim(), botId: chief.id, scope: 'Give a short design review report.', origin: 'boss', end: 'report_once', hop: 1 }
   writeFileSync(fixture, JSON.stringify(request), { mode: 0o600 })
   await call(request, 'create')
   const until = Date.now() + 45000

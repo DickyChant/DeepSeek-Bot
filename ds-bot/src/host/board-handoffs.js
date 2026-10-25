@@ -128,12 +128,16 @@ export class BoardHandoffs {
         }
       }
       if (r.turn === undefined) continue
+      if (event.data?.turn !== undefined && event.data.turn !== r.turn) continue
       if (event.type === 'assistant/message') {
         const content = event.data?.message?.content
         r.text = Array.isArray(content) && content.some(b => b?.type === 'tool-call') ? '' : textOf(content).slice(0, 12000)
       }
       if (event.type === 'turn/end') {
-        r.report = { text: event.data?.reason?.kind === 'completed' ? r.text || 'Chief completed without a text report.' : 'Chief’s turn ended without a completed report. Inspect the Chief chat.', origin: 'chief', hop: 2 }
+        if (event.data?.reason?.kind !== 'completed' || !r.text) {
+          r.state = 'uncertain'; delete r.turn; delete r.text; this.save(); continue
+        }
+        r.report = { text: r.text, origin: 'chief', hop: 2 }
         r.state = 'reported'; delete r.turn; delete r.text; this.save()
       }
     }
