@@ -1,4 +1,5 @@
 // A small service for authenticated integrations. DS Bot remains the session owner.
+import { BoardHandoffs } from './board-handoffs.js'
 import { randomUUID } from 'node:crypto'
 import { BridgeApprovals } from './bridge-approvals.js'
 import { Service } from '@deepseek-ai/cordis'
@@ -11,12 +12,15 @@ export class BotBridge extends Service {
   constructor(rt) {
     super(rt.ctx, 'botBridge')
     this.rt = rt
+    this.boardHandoffs = new BoardHandoffs(rt, input => this.target(input))
     this.sends = new Map()
     this.controls = new Map()
     this.files = new Map()
     this.approvalEvents = new BridgeApprovals(rt)
     rt.ctx.effect(() => () => this.approvalEvents.close(), 'ds-bot: bridge approvals')
   }
+
+  async handoff(input) { return this.boardHandoffs.call(input) }
 
   async target(input) {
     const rt = this.rt
